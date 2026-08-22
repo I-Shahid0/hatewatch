@@ -1,0 +1,3 @@
+{
+  "extends": "@hate_evidence_copilot/config/tsconfig.base.json"
+}
