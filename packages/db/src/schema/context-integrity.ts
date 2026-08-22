@@ -9,10 +9,14 @@ import {
 
 import { primaryId, timestamps } from "./columns";
 import {
+	type CaptureMethod,
+	type ContentSurface,
 	type ContextElement,
 	type ContextElementStatus,
 	contextElementEnum,
 	contextElementStatusEnum,
+	type Platform,
+	type TimePrecision,
 } from "./enums";
 import { evidence } from "./evidence";
 
@@ -88,6 +92,141 @@ export function computeContextIntegrity(
 
 	if (applicable === 0) return null;
 	return Math.round((available / applicable) * 100);
+}
+
+/** The verified evidence fields the checklist is derived from. */
+export type ContextCheckInput = {
+	hasArtifact: boolean;
+	platform: Platform;
+	contentText: string | null;
+	occurredAt: Date | null;
+	occurredAtPrecision: TimePrecision;
+	sourceUrl: string | null;
+	targetContext: string | null;
+	contentSurface: ContentSurface;
+	parentEvidenceId: string | null;
+	parentContextUrl: string | null;
+	parentContextSummary: string | null;
+	captureMethod: CaptureMethod;
+};
+
+export type DerivedContextCheck = {
+	element: ContextElement;
+	status: ContextElementStatus;
+	weight: number;
+	note: string | null;
+};
+
+/**
+ * Surfaces that have nothing above them in a thread. A direct message or a
+ * top-level post is not penalised for having no parent post.
+ */
+const SURFACES_WITHOUT_PARENT: ReadonlySet<ContentSurface> = new Set([
+	"public_post",
+	"story",
+	"direct_message",
+	"group_chat",
+	"live_stream",
+	"profile",
+]);
+
+/**
+ * Turns verified evidence fields into the eight checklist rows.
+ *
+ * The distinction that matters here is `missing` versus `unknown`: a screenshot
+ * with no visible platform is not the same as one an advocate has not filled in
+ * yet, and the checklist says which it is rather than flattening both to absent.
+ */
+export function deriveContextChecks(
+	input: ContextCheckInput,
+): DerivedContextCheck[] {
+	const check = (
+		element: ContextElement,
+		status: ContextElementStatus,
+		note: string | null = null,
+	): DerivedContextCheck => ({
+		element,
+		status,
+		weight: CONTEXT_ELEMENT_WEIGHTS[element],
+		note,
+	});
+
+	const hasParentContext =
+		input.parentEvidenceId !== null ||
+		input.parentContextUrl !== null ||
+		input.parentContextSummary !== null;
+
+	return [
+		input.hasArtifact
+			? check("evidence_artifact", "present")
+			: check(
+					"evidence_artifact",
+					"missing",
+					"No screenshot or capture attached — only a reference to the content.",
+				),
+
+		input.platform === "unknown"
+			? check("platform", "unknown", "No platform visible in the capture.")
+			: check("platform", "present"),
+
+		input.contentText && input.contentText.trim().length > 0
+			? check("content_text", "present")
+			: check("content_text", "missing", "No readable content text recorded."),
+
+		input.occurredAt === null
+			? check("timestamp", "missing", "No post time recorded.")
+			: input.occurredAtPrecision === "unknown"
+				? check(
+						"timestamp",
+						"unknown",
+						"A time is recorded but its precision could not be established.",
+					)
+				: check("timestamp", "present"),
+
+		input.sourceUrl
+			? check("source_url", "present")
+			: check(
+					"source_url",
+					"missing",
+					"No original URL — the content cannot be re-checked at source.",
+				),
+
+		input.targetContext
+			? check("target_context", "present")
+			: check(
+					"target_context",
+					"missing",
+					"Who or what was targeted has not been recorded.",
+				),
+
+		SURFACES_WITHOUT_PARENT.has(input.contentSurface)
+			? check(
+					"parent_context",
+					"not_applicable",
+					"This surface has no parent post.",
+				)
+			: input.contentSurface === "unknown" || input.contentSurface === "other"
+				? check(
+						"parent_context",
+						"unknown",
+						"Surface unknown, so it is unclear whether a parent post exists.",
+					)
+				: hasParentContext
+					? check("parent_context", "present")
+					: check(
+							"parent_context",
+							"missing",
+							"Replies to something that has not been captured.",
+						),
+
+		input.captureMethod === "unknown"
+			? check(
+					"capture_provenance",
+					"unknown",
+					"How this capture was made has not been recorded.",
+				)
+			: check("capture_provenance", "present"),
+	];
 }
 
 export type EvidenceContextCheck = typeof evidenceContextCheck.$inferSelect;

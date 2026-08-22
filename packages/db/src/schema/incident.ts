@@ -115,5 +115,20 @@ export const incident = pgTable(
 	],
 );
 
+/**
+ * Builds the human-facing reference (`HW-2026-0142`) from the database-assigned
+ * sequence. Kept next to the column so every caller formats it identically.
+ *
+ * `sequenceNumber` is only known after the insert returns, so creating an
+ * incident writes the code in a second statement inside the same transaction.
+ */
+export function formatIncidentReference(
+	sequenceNumber: number,
+	createdAt: Date = new Date(),
+): string {
+	const year = createdAt.getUTCFullYear();
+	return `HW-${year}-${String(sequenceNumber).padStart(4, "0")}`;
+}
+
 export type Incident = typeof incident.$inferSelect;
 export type NewIncident = typeof incident.$inferInsert;

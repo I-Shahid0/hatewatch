@@ -39,6 +39,7 @@
 		"db:studio": "turbo run db:studio -F @hate_evidence_copilot/db --",
 		"db:generate": "turbo run db:generate -F @hate_evidence_copilot/db --",
 		"db:migrate": "turbo run db:migrate -F @hate_evidence_copilot/db --",
+		"db:seed": "turbo run db:seed -F @hate_evidence_copilot/db --",
 		"docker:build": "docker compose build",
 		"docker:up": "docker compose up -d --build",
 		"docker:down": "docker compose down",

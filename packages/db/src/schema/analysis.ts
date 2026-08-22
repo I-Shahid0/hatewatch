@@ -42,8 +42,14 @@ export const classification = pgTable(
 
 		category: classificationCategoryEnum("category").notNull(),
 		authorKind: authorKindEnum("author_kind").notNull(),
+		/**
+		 * Cascades rather than nulls: an AI-authored row must always cite the run
+		 * that produced it, so it cannot outlive that run. In practice runs are
+		 * only deleted along with their incident or evidence, which removes these
+		 * rows anyway.
+		 */
 		aiRunId: uuid("ai_run_id").references(() => aiRun.id, {
-			onDelete: "set null",
+			onDelete: "cascade",
 		}),
 
 		claim: text("claim").notNull(),
@@ -113,8 +119,9 @@ export const pattern = pgTable(
 		description: text("description").notNull(),
 
 		authorKind: authorKindEnum("author_kind").notNull(),
+		/** Cascades for the same reason as `classification.aiRunId`. */
 		aiRunId: uuid("ai_run_id").references(() => aiRun.id, {
-			onDelete: "set null",
+			onDelete: "cascade",
 		}),
 		confidence: confidenceLevelEnum("confidence")
 			.default("unavailable")
