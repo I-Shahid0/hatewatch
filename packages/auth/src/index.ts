@@ -1,12 +1,10 @@
-import { createDb } from "@hate_evidence_copilot/db";
+import { db } from "@hate_evidence_copilot/db";
 import * as schema from "@hate_evidence_copilot/db/schema/auth";
 import { env } from "@hate_evidence_copilot/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
 export function createAuth() {
-	const db = createDb();
-
 	return betterAuth({
 		database: drizzleAdapter(db, {
 			provider: "pg",
