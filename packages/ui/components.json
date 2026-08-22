@@ -1,24 +1,24 @@
 {
-  "$schema": "https://ui.shadcn.com/schema.json",
-  "style": "base-lyra",
-  "rsc": true,
-  "tsx": true,
-  "tailwind": {
-    "config": "",
-    "css": "src/styles/globals.css",
-    "baseColor": "neutral",
-    "cssVariables": true,
-    "prefix": ""
-  },
-  "iconLibrary": "lucide",
-  "aliases": {
-    "components": "@hate_evidence_copilot/ui/components",
-    "utils": "@hate_evidence_copilot/ui/lib/utils",
-    "hooks": "@hate_evidence_copilot/ui/hooks",
-    "lib": "@hate_evidence_copilot/ui/lib",
-    "ui": "@hate_evidence_copilot/ui/components"
-  },
-  "menuColor": "default",
-  "menuAccent": "subtle",
-  "registries": {}
+	"$schema": "https://ui.shadcn.com/schema.json",
+	"style": "base-lyra",
+	"rsc": true,
+	"tsx": true,
+	"tailwind": {
+		"config": "",
+		"css": "src/styles/globals.css",
+		"baseColor": "neutral",
+		"cssVariables": true,
+		"prefix": ""
+	},
+	"iconLibrary": "lucide",
+	"aliases": {
+		"components": "@hate_evidence_copilot/ui/components",
+		"utils": "@hate_evidence_copilot/ui/lib/utils",
+		"hooks": "@hate_evidence_copilot/ui/hooks",
+		"lib": "@hate_evidence_copilot/ui/lib",
+		"ui": "@hate_evidence_copilot/ui/components"
+	},
+	"menuColor": "default",
+	"menuAccent": "subtle",
+	"registries": {}
 }
