@@ -4,18 +4,31 @@ import {
 	computeContextIntegrity,
 	contentSurfaceEnum,
 	type Db,
+	type EvidenceFieldName,
+	type ReviewDecision,
 	deriveContextChecks,
 	evidence,
 	evidenceAsset,
 	evidenceContextCheck,
+	evidenceFieldEnum,
+	evidenceFieldReview,
 	evidenceKindEnum,
 	incident,
 	platformEnum,
+	reviewDecisionEnum,
 } from "@hate_evidence_copilot/db";
-import { and, asc, eq, max, sql } from "@hate_evidence_copilot/db/sql";
+import { and, asc, eq, sql } from "@hate_evidence_copilot/db/sql";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
+import {
+	applyFieldDecision,
+	allocateSequenceNumber,
+	computeVerificationStatus,
+	readFieldValue,
+	recomputeEvidenceIntegrity,
+	refreshIncidentIntegrity,
+} from "../evidence-review";
 import { protectedProcedure } from "../index";
 import { removeStoredFile, storeEvidenceFile } from "../storage";
 import { visibleIncidents } from "./visibility";
@@ -71,6 +84,24 @@ const createInput = z
 		}
 	});
 
+const reviewFieldInput = z
+	.object({
+		evidenceId: z.uuid(),
+		field: z.enum(evidenceFieldEnum.enumValues),
+		decision: z.enum(reviewDecisionEnum.enumValues),
+		reviewedValue: z.string().max(20_000).optional(),
+		note: z.string().trim().max(2_000).optional(),
+	})
+	.superRefine((value, ctx) => {
+		if (value.decision === "edited" && value.reviewedValue === undefined) {
+			ctx.addIssue({
+				code: "custom",
+				message: "Edited reviews require a value.",
+				path: ["reviewedValue"],
+			});
+		}
+	});
+
 /** Throws unless the signed-in advocate may read this incident. */
 async function assertIncidentVisible(
 	db: Db,
@@ -106,68 +137,6 @@ function inferKind(input: {
 	if (input.contentText?.trim()) return "pasted_text";
 	if (input.sourceUrl?.trim()) return "url";
 	return "other";
-}
-
-/**
- * Next citation number for this incident. The incident row is locked so two
- * concurrent uploads cannot claim the same sequence under the unique index.
- */
-async function allocateSequenceNumber(
-	tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
-	incidentId: string,
-): Promise<number> {
-	const [locked] = await tx
-		.select({ id: incident.id })
-		.from(incident)
-		.where(eq(incident.id, incidentId))
-		.for("update");
-
-	if (!locked) {
-		throw new ORPCError("NOT_FOUND", { message: "Incident not found." });
-	}
-
-	const [agg] = await tx
-		.select({ highest: max(evidence.sequenceNumber) })
-		.from(evidence)
-		.where(eq(evidence.incidentId, incidentId));
-
-	return (agg?.highest ?? 0) + 1;
-}
-
-async function refreshIncidentIntegrity(
-	tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
-	incidentId: string,
-) {
-	const rows = await tx
-		.select({ score: evidence.contextIntegrityScore })
-		.from(evidence)
-		.where(eq(evidence.incidentId, incidentId));
-
-	const scores = rows
-		.map((row) => row.score)
-		.filter((score): score is number => score !== null);
-
-	const incidentScore =
-		scores.length > 0
-			? Math.round(
-					scores.reduce((sum, value) => sum + value, 0) / scores.length,
-				)
-			: null;
-
-	const [current] = await tx
-		.select({ status: incident.status })
-		.from(incident)
-		.where(eq(incident.id, incidentId))
-		.limit(1);
-
-	await tx
-		.update(incident)
-		.set({
-			contextIntegrityScore: incidentScore,
-			contextIntegrityComputedAt: new Date(),
-			...(current?.status === "draft" ? { status: "intake" as const } : {}),
-		})
-		.where(eq(incident.id, incidentId));
 }
 
 export const evidenceRouter = {
@@ -217,7 +186,9 @@ export const evidenceRouter = {
 					assets: true,
 					contextChecks: true,
 					classifications: true,
-					fieldReviews: true,
+					fieldReviews: {
+						orderBy: (review, { desc }) => [desc(review.createdAt)],
+					},
 					redactions: true,
 					extractions: {
 						where: (extraction, { eq: equals }) =>
@@ -403,5 +374,137 @@ export const evidenceRouter = {
 				if (writtenKey) await removeStoredFile(writtenKey);
 				throw error;
 			}
+		}),
+
+	/**
+	 * Human verification: one field decision in one transaction — update the
+	 * verified column, append the audit trail, re-score Context Integrity, and
+	 * bump verification status.
+	 */
+	reviewField: protectedProcedure
+		.input(reviewFieldInput)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			const existing = await context.db.query.evidence.findFirst({
+				where: eq(evidence.id, input.evidenceId),
+				with: {
+					assets: true,
+					fieldReviews: { orderBy: (review, { desc }) => [desc(review.createdAt)] },
+				},
+			});
+
+			if (!existing) {
+				throw new ORPCError("NOT_FOUND", { message: "Evidence not found." });
+			}
+
+			await assertIncidentVisible(
+				context.db,
+				userId,
+				existing.incidentId,
+			);
+
+			const originalValue = readFieldValue(existing, input.field);
+			const fieldUpdate = applyFieldDecision(
+				input.field,
+				input.decision,
+				input.reviewedValue,
+			);
+
+			const reviewedValue =
+				input.decision === "edited"
+					? (input.reviewedValue?.trim() ?? null)
+					: input.decision === "confirmed"
+						? originalValue
+						: null;
+
+			await context.db.transaction(async (tx) => {
+				const [updated] = await tx
+					.update(evidence)
+					.set(fieldUpdate)
+					.where(eq(evidence.id, existing.id))
+					.returning();
+
+				if (!updated) {
+					throw new ORPCError("INTERNAL_SERVER_ERROR", {
+						message: "Evidence update returned no row.",
+					});
+				}
+
+				await tx.insert(evidenceFieldReview).values({
+					evidenceId: existing.id,
+					field: input.field,
+					originalValue,
+					reviewedValue,
+					decision: input.decision,
+					note: input.note?.trim() || null,
+					reviewedBy: userId,
+				});
+
+				const latestReviews = new Map<EvidenceFieldName, ReviewDecision>();
+				for (const review of existing.fieldReviews) {
+					if (!latestReviews.has(review.field)) {
+						latestReviews.set(review.field, review.decision);
+					}
+				}
+				latestReviews.set(input.field, input.decision);
+
+				const hasArtifact = existing.assets.some(
+					(asset) => asset.role === "original",
+				);
+				const verificationStatus = computeVerificationStatus(
+					updated,
+					latestReviews,
+					hasArtifact,
+				);
+
+				const [withStatus] = await tx
+					.update(evidence)
+					.set({ verificationStatus })
+					.where(eq(evidence.id, existing.id))
+					.returning();
+
+				const rowForChecks = withStatus ?? { ...updated, verificationStatus };
+				const { score } = await recomputeEvidenceIntegrity(
+					tx,
+					rowForChecks,
+					hasArtifact,
+				);
+
+				await tx.insert(auditEvent).values({
+					incidentId: existing.incidentId,
+					actorKind: "user",
+					actorUserId: userId,
+					action: "evidence.field_reviewed",
+					entityType: "evidence_field_review",
+					entityId: existing.id,
+					valueBefore: { [input.field]: originalValue },
+					valueAfter: {
+						field: input.field,
+						decision: input.decision,
+						reviewedValue,
+						verificationStatus,
+						contextIntegrityScore: score,
+					},
+					note: input.note?.trim() || null,
+				});
+
+				await refreshIncidentIntegrity(tx, existing.incidentId);
+			});
+
+			return context.db.query.evidence.findFirst({
+				where: eq(evidence.id, input.evidenceId),
+				with: {
+					incident: { columns: { id: true, referenceCode: true, title: true } },
+					assets: true,
+					contextChecks: true,
+					classifications: true,
+					fieldReviews: true,
+					extractions: {
+						where: (extraction, { eq: equals }) =>
+							equals(extraction.isCurrent, true),
+					},
+				},
+			});
 		}),
 };

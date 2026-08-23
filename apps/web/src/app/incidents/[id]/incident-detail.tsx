@@ -2,6 +2,7 @@
 import { Button } from "@hate_evidence_copilot/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import type { Route } from "next";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -77,6 +78,12 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 		(total, item) => total + item.contextChecks.length,
 		0,
 	);
+
+	const needsVerify = (status: string) =>
+		status === "uploaded" ||
+		status === "needs_verification" ||
+		status === "partially_verified" ||
+		status === "marked_uncertain";
 
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-6">
@@ -217,12 +224,24 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 													<Stamp tone="gap">priority review</Stamp>
 												)}
 											</div>
-											<span className="font-mono text-[11px] text-muted-foreground">
-												{formatDate(item.occurredAt)}
-												{item.occurredAtPrecision !== "exact" &&
-													item.occurredAt &&
-													` · ${formatEnum(item.occurredAtPrecision)}`}
-											</span>
+											<div className="flex items-center gap-3">
+												{needsVerify(item.verificationStatus) && (
+													<Link
+														href={
+															`/incidents/${incidentId}/evidence/${item.id}` as Route
+														}
+														className="font-mono text-[10px] text-primary-ink uppercase tracking-[0.12em] underline underline-offset-4"
+													>
+														verify →
+													</Link>
+												)}
+												<span className="font-mono text-[11px] text-muted-foreground">
+													{formatDate(item.occurredAt)}
+													{item.occurredAtPrecision !== "exact" &&
+														item.occurredAt &&
+														` · ${formatEnum(item.occurredAtPrecision)}`}
+												</span>
+											</div>
 										</header>
 
 										<div className="space-y-3 p-3">
