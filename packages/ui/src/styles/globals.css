@@ -31,6 +31,12 @@
 	/* Acid lime: the highlighter on the evidence folder. */
 	--primary: oklch(0.83 0.19 122);
 	--primary-foreground: oklch(0.16 0.03 130);
+	/*
+	 * Lime works as a *fill* (dark text on top) but not as ink: on paper it
+	 * lands near 1.4:1. Accent text uses this deeper olive instead, and both
+	 * tokens collapse to the same value in dark mode where lime reads fine.
+	 */
+	--primary-ink: oklch(0.52 0.15 128);
 
 	--secondary: oklch(0.92 0.008 92);
 	--secondary-foreground: oklch(0.28 0.015 265);
@@ -84,6 +90,8 @@
 
 	--primary: oklch(0.87 0.21 124);
 	--primary-foreground: oklch(0.17 0.04 130);
+	/* On ink, the bright lime is already the high-contrast choice. */
+	--primary-ink: oklch(0.87 0.21 124);
 
 	--secondary: oklch(0.26 0.018 265);
 	--secondary-foreground: oklch(0.92 0.008 92);
@@ -126,6 +134,7 @@
 	--font-sans: var(--font-geist-sans), "Inter Variable", system-ui, sans-serif;
 	--font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
 
+	--color-primary-ink: var(--primary-ink);
 	--color-surface-2: var(--surface-2);
 	--color-rule: var(--rule);
 	--color-ink-faint: var(--ink-faint);
@@ -184,8 +193,11 @@
 	40% {
 		transform: scaleX(1);
 	}
+	/* Fades as well as collapsing: a zero-width box can still leave a hairline
+	   against the text it was covering. */
 	100% {
 		transform: scaleX(0);
+		opacity: 0;
 	}
 }
 

@@ -130,7 +130,7 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 				>
 					<header className="flex items-center justify-between border-rule border-b bg-surface-2 px-4 py-2.5">
 						<div>
-							<p className="hw-label text-primary">evidence inbox</p>
+							<p className="hw-label text-primary-ink">evidence inbox</p>
 							<h2 className="mt-1 font-medium text-sm">Capture one item</h2>
 						</div>
 						<Button
@@ -158,7 +158,7 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 								)}
 							>
 								<span
-									className={cn("hw-label", mode === value && "text-primary")}
+									className={cn("hw-label", mode === value && "text-primary-ink")}
 								>
 									{label}
 								</span>
@@ -171,11 +171,9 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 
 					<div className="flex flex-col gap-4 overflow-y-auto p-4">
 						{mode === "file" && (
-							// biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop
-							// is a pointer-only shortcut; the labelled file input inside is
-							// the accessible path and does the same thing.
-							<div
-								role="region"
+							// Drag-and-drop is a pointer-only shortcut; the file input
+							// inside is the accessible path and does the same thing.
+							<section
 								aria-label="Screenshot drop zone"
 								className={cn(
 									"flex flex-col items-center justify-center gap-3 border border-rule border-dashed px-4 py-8 text-center transition-colors",
@@ -202,11 +200,11 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 									}
 								/>
 								{file && (
-									<p className="font-mono text-[11px] text-primary">
+									<p className="font-mono text-[11px] text-primary-ink">
 										{file.name} · {Math.round(file.size / 1024)} KB
 									</p>
 								)}
-							</div>
+							</section>
 						)}
 
 						{mode === "text" && (

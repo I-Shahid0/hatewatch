@@ -91,7 +91,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 			<header className="mt-4 border border-rule bg-card">
 				<div className="flex flex-col gap-5 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
 					<div className="min-w-0">
-						<p className="font-mono text-primary text-xs tracking-[0.14em]">
+						<p className="font-mono text-primary-ink text-xs tracking-[0.14em]">
 							{row.referenceCode}
 						</p>
 						<h1 className="mt-2 text-balance font-semibold text-2xl tracking-[-0.025em] sm:text-3xl">
@@ -284,7 +284,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 														href={item.sourceUrl}
 														target="_blank"
 														rel="noreferrer"
-														className="font-mono text-[11px] text-primary underline underline-offset-4"
+														className="font-mono text-[11px] text-primary-ink underline underline-offset-4"
 													>
 														source ↗
 													</a>

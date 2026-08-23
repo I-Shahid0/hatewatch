@@ -62,7 +62,7 @@ export default function Home() {
 					<Stamp tone="lime">evidence assistant · human reviewed</Stamp>
 
 					<h1 className="mt-5 text-balance font-semibold text-4xl leading-[1.05] tracking-[-0.035em] sm:text-6xl">
-						Preserve the <span className="hw-redact text-primary">context</span>{" "}
+						Preserve the <span className="hw-redact text-primary-ink">context</span>{" "}
 						behind online hate.
 					</h1>
 
@@ -125,7 +125,7 @@ export default function Home() {
 					</div>
 
 					<div className="hw-glow border border-rule bg-card p-3">
-						<p className="hw-label mb-3 text-primary">what you get</p>
+						<p className="hw-label mb-3 text-primary-ink">what you get</p>
 						<p className="font-mono text-sm tracking-[-0.01em]">HW-2026-0142</p>
 						<p className="mt-1 text-[13px] leading-snug">
 							Hostility after community centre open day
@@ -156,7 +156,7 @@ export default function Home() {
 				<ol className="grid gap-px sm:grid-cols-4 lg:grid-cols-7">
 					{PIPELINE.map(([step, detail], index) => (
 						<li key={step} className="px-2 py-1">
-							<span className="hw-label text-primary">
+							<span className="hw-label text-primary-ink">
 								{String(index + 1).padStart(2, "0")}
 							</span>
 							<p className="mt-1.5 font-medium text-sm">{step}</p>

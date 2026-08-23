@@ -18,7 +18,7 @@ function Wordmark() {
 			<span className="font-mono font-semibold text-base tracking-[-0.02em]">
 				HATE
 			</span>
-			<span className="hw-redact font-mono font-semibold text-base text-primary tracking-[-0.02em]">
+			<span className="hw-redact font-mono font-semibold text-base text-primary-ink tracking-[-0.02em]">
 				WATCH
 			</span>
 		</Link>

@@ -68,18 +68,18 @@ export default function LoginPage() {
 	return (
 		<div className="grid min-h-[calc(100svh-8rem)] lg:grid-cols-2">
 			{/* Left: the argument. */}
-			<section className="hidden flex-col justify-center border-rule border-r px-10 lg:flex">
+			<section className="hidden flex-col items-start justify-center border-rule border-r px-10 lg:flex">
 				<Stamp tone="lime">access · community advocates</Stamp>
 				<h1 className="mt-5 max-w-md text-balance font-semibold text-4xl leading-[1.08] tracking-[-0.035em]">
 					Evidence that keeps its{" "}
-					<span className="hw-redact text-primary">context</span>.
+					<span className="hw-redact text-primary-ink">context</span>.
 				</h1>
 				<p className="mt-5 max-w-sm text-muted-foreground leading-relaxed">
 					Fourteen screenshots become one incident record another person can
 					actually read — with every gap in the evidence written down instead of
 					quietly lost.
 				</p>
-				<dl className="mt-10 max-w-sm space-y-2.5 font-mono text-[11px]">
+				<dl className="mt-10 w-full max-w-sm space-y-2.5 font-mono text-[11px]">
 					{[
 						["capture", "screenshots, text, URLs"],
 						["verify", "a human confirms every field"],
@@ -89,7 +89,7 @@ export default function LoginPage() {
 							key={key}
 							className="flex justify-between border-rule/60 border-b pb-2"
 						>
-							<dt className="text-primary uppercase tracking-[0.14em]">
+							<dt className="text-primary-ink uppercase tracking-[0.14em]">
 								{key}
 							</dt>
 							<dd className="text-muted-foreground">{value}</dd>
@@ -115,7 +115,7 @@ export default function LoginPage() {
 								aria-pressed={mode === value}
 								className={`hw-label py-3 transition-colors ${index === 0 ? "border-rule border-r" : ""} ${
 									mode === value
-										? "bg-primary/10 text-primary"
+										? "bg-primary/10 text-primary-ink"
 										: "hover:text-foreground"
 								}`}
 							>

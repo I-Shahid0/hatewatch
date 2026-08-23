@@ -116,7 +116,7 @@ export default function NewIncidentForm() {
 				>
 					<header className="flex items-center justify-between border-rule border-b bg-surface-2 px-4 py-2.5">
 						<div>
-							<p className="hw-label text-primary">form hw-intake-01</p>
+							<p className="hw-label text-primary-ink">form hw-intake-01</p>
 							<h2 className="mt-1 font-medium text-sm">Open a new incident</h2>
 						</div>
 						<Button
