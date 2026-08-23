@@ -16,8 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "hate_evidence_copilot",
-	description: "hate_evidence_copilot",
+	title: "HateWatch — preserve the context behind online hate",
+	description:
+		"Turn scattered evidence of online anti-Muslim hate into a structured, human-reviewed incident record.",
 };
 
 export default function RootLayout({
@@ -31,9 +32,17 @@ export default function RootLayout({
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>
 				<Providers>
-					<div className="grid h-svh grid-rows-[auto_1fr]">
+					{/* Blueprint paper: fixed behind everything, never scrolls. */}
+					<div className="hw-grid pointer-events-none fixed inset-0 -z-10" />
+					<div className="grid min-h-svh grid-rows-[auto_1fr_auto]">
 						<Header />
-						{children}
+						<main>{children}</main>
+						<footer className="border-rule border-t px-4 py-3">
+							<p className="hw-label leading-relaxed">
+								AI suggests · humans verify · exports are built from verified
+								fields only
+							</p>
+						</footer>
 					</div>
 				</Providers>
 			</body>

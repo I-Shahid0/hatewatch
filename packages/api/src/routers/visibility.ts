@@ -2,7 +2,7 @@ import { incident } from "@hate_evidence_copilot/db";
 import { eq, or } from "@hate_evidence_copilot/db/sql";
 
 /**
- * Which incidents a signed-in advocate may read.
+ * Which incidents a signed-in advocate may read or mutate.
  *
  * Real incidents are visible only to the advocate who created them: there is no
  * organisation or membership model yet, so ownership is the only boundary

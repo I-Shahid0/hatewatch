@@ -1,6 +1,15 @@
 import { createContext } from "@hate_evidence_copilot/api/context";
 import { appRouter } from "@hate_evidence_copilot/api/routers/index";
+import { visibleIncidents } from "@hate_evidence_copilot/api/routers/visibility";
+import { resolveStoragePath } from "@hate_evidence_copilot/api/storage";
 import { auth } from "@hate_evidence_copilot/auth";
+import {
+	db,
+	evidence,
+	evidenceAsset,
+	incident,
+} from "@hate_evidence_copilot/db";
+import { and, eq } from "@hate_evidence_copilot/db/sql";
 import { env } from "@hate_evidence_copilot/env/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
@@ -25,6 +34,57 @@ app.use(
 );
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+/**
+ * Serves uploaded evidence from local disk. Auth + incident visibility are
+ * checked before the path is resolved so storage keys are not guessable URLs.
+ */
+app.get("/files/*", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session?.user) {
+		return c.text("Unauthorized", 401);
+	}
+
+	const storageKey = decodeURIComponent(c.req.path.replace(/^\/files\//, ""));
+	if (!storageKey || storageKey.includes("..")) {
+		return c.text("Not found", 404);
+	}
+
+	const [asset] = await db
+		.select({
+			storageKey: evidenceAsset.storageKey,
+			mimeType: evidenceAsset.mimeType,
+			fileName: evidenceAsset.fileName,
+		})
+		.from(evidenceAsset)
+		.innerJoin(evidence, eq(evidence.id, evidenceAsset.evidenceId))
+		.innerJoin(incident, eq(incident.id, evidence.incidentId))
+		.where(
+			and(
+				eq(evidenceAsset.storageKey, storageKey),
+				visibleIncidents(session.user.id),
+			),
+		)
+		.limit(1);
+
+	if (!asset) {
+		return c.text("Not found", 404);
+	}
+
+	const absolute = resolveStoragePath(asset.storageKey);
+	const file = Bun.file(absolute);
+	if (!(await file.exists())) {
+		return c.text("Not found", 404);
+	}
+
+	return new Response(file, {
+		headers: {
+			"Content-Type": asset.mimeType ?? "application/octet-stream",
+			"Content-Disposition": `inline; filename="${asset.fileName ?? "evidence"}"`,
+			"Cache-Control": "private, max-age=3600",
+		},
+	});
+});
 
 export const apiHandler = new OpenAPIHandler(appRouter, {
 	plugins: [

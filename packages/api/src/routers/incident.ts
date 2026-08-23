@@ -1,4 +1,13 @@
-import { type Db, evidence, incident } from "@hate_evidence_copilot/db";
+import {
+	auditEvent,
+	type Db,
+	evidence,
+	formatIncidentReference,
+	incident,
+	platformEnum,
+	reportingContextEnum,
+	targetTypeEnum,
+} from "@hate_evidence_copilot/db";
 import {
 	and,
 	asc,
@@ -20,6 +29,23 @@ const listInput = z.object({
 });
 
 const byId = z.object({ id: z.uuid() });
+
+const createInput = z.object({
+	title: z.string().trim().min(1).max(240),
+	situationSummary: z.string().trim().max(8_000).optional(),
+	targetType: z.enum(targetTypeEnum.enumValues).default("unknown"),
+	targetDescription: z.string().trim().max(2_000).optional(),
+	reportingContext: z
+		.enum(reportingContextEnum.enumValues)
+		.default("supporting_someone_else"),
+	declaredPlatforms: z
+		.array(z.enum(platformEnum.enumValues))
+		.max(12)
+		.default([]),
+	/** Routes the incident into the safety queue without scoring risk. */
+	flagForSafetyReview: z.boolean().default(false),
+	safetyReviewNote: z.string().trim().max(2_000).optional(),
+});
 
 /** Shared by `get` and `packet`, which both need the full incident tree. */
 async function loadIncidentDetail(db: Db, userId: string, incidentId: string) {
@@ -131,6 +157,89 @@ function buildIncidentPacket(row: IncidentDetail) {
 }
 
 export const incidentRouter = {
+	/**
+	 * Opens a new incident. The human-facing reference code is derived from the
+	 * database-assigned sequence in a second statement inside the same
+	 * transaction — same pattern as the demo seed.
+	 */
+	create: protectedProcedure
+		.input(createInput)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const flagSafety = input.flagForSafetyReview;
+
+			const created = await context.db.transaction(async (tx) => {
+				const [row] = await tx
+					.insert(incident)
+					.values({
+						referenceCode: `pending-${crypto.randomUUID()}`,
+						title: input.title,
+						situationSummary: input.situationSummary || null,
+						status: "draft",
+						priority: flagSafety ? "priority_review" : "standard",
+						safetyReviewStatus: flagSafety
+							? "needs_human_review"
+							: "not_flagged",
+						safetyReviewNote: flagSafety
+							? (input.safetyReviewNote ?? null)
+							: null,
+						targetType: input.targetType,
+						targetDescription: input.targetDescription || null,
+						reportingContext: input.reportingContext,
+						declaredPlatforms: input.declaredPlatforms,
+						createdBy: userId,
+					})
+					.returning({
+						id: incident.id,
+						sequenceNumber: incident.sequenceNumber,
+						createdAt: incident.createdAt,
+					});
+
+				if (!row) {
+					throw new ORPCError("INTERNAL_SERVER_ERROR", {
+						message: "Incident insert returned no row.",
+					});
+				}
+
+				const referenceCode = formatIncidentReference(
+					row.sequenceNumber,
+					row.createdAt,
+				);
+
+				const [updated] = await tx
+					.update(incident)
+					.set({ referenceCode })
+					.where(eq(incident.id, row.id))
+					.returning();
+
+				if (!updated) {
+					throw new ORPCError("INTERNAL_SERVER_ERROR", {
+						message: "Failed to set incident reference code.",
+					});
+				}
+
+				await tx.insert(auditEvent).values({
+					incidentId: updated.id,
+					actorKind: "user",
+					actorUserId: userId,
+					action: "incident.created",
+					entityType: "incident",
+					entityId: updated.id,
+					valueAfter: {
+						referenceCode: updated.referenceCode,
+						title: updated.title,
+						targetType: updated.targetType,
+						declaredPlatforms: updated.declaredPlatforms,
+						safetyReviewStatus: updated.safetyReviewStatus,
+					},
+				});
+
+				return updated;
+			});
+
+			return created;
+		}),
+
 	/**
 	 * Dashboard rows. Counts are aggregated in SQL rather than by loading the
 	 * evidence, because the dashboard only needs the totals.
