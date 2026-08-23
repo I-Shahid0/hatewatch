@@ -62,8 +62,9 @@ export default function Home() {
 					<Stamp tone="lime">evidence assistant · human reviewed</Stamp>
 
 					<h1 className="mt-5 text-balance font-semibold text-4xl leading-[1.05] tracking-[-0.035em] sm:text-6xl">
-						Preserve the <span className="hw-redact text-primary-ink">context</span>{" "}
-						behind online hate.
+						Preserve the{" "}
+						<span className="hw-redact text-primary-ink">context</span> behind
+						online hate.
 					</h1>
 
 					<p className="mt-5 max-w-xl text-pretty text-muted-foreground leading-relaxed">

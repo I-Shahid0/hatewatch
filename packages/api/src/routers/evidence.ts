@@ -3,27 +3,25 @@ import {
 	captureMethodEnum,
 	computeContextIntegrity,
 	contentSurfaceEnum,
-	type Db,
-	type EvidenceFieldName,
-	type ReviewDecision,
 	deriveContextChecks,
+	type EvidenceFieldName,
 	evidence,
 	evidenceAsset,
 	evidenceContextCheck,
 	evidenceFieldEnum,
 	evidenceFieldReview,
 	evidenceKindEnum,
-	incident,
 	platformEnum,
+	type ReviewDecision,
 	reviewDecisionEnum,
 } from "@hate_evidence_copilot/db";
-import { and, asc, eq, sql } from "@hate_evidence_copilot/db/sql";
+import { asc, eq, sql } from "@hate_evidence_copilot/db/sql";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 
 import {
-	applyFieldDecision,
 	allocateSequenceNumber,
+	applyFieldDecision,
 	computeVerificationStatus,
 	readFieldValue,
 	recomputeEvidenceIntegrity,
@@ -31,7 +29,7 @@ import {
 } from "../evidence-review";
 import { protectedProcedure } from "../index";
 import { removeStoredFile, storeEvidenceFile } from "../storage";
-import { visibleIncidents } from "./visibility";
+import { assertIncidentVisible } from "./visibility";
 
 const listInput = z.object({
 	incidentId: z.uuid(),
@@ -101,23 +99,6 @@ const reviewFieldInput = z
 			});
 		}
 	});
-
-/** Throws unless the signed-in advocate may read this incident. */
-async function assertIncidentVisible(
-	db: Db,
-	userId: string,
-	incidentId: string,
-) {
-	const [row] = await db
-		.select({ id: incident.id })
-		.from(incident)
-		.where(and(eq(incident.id, incidentId), visibleIncidents(userId)))
-		.limit(1);
-
-	if (!row) {
-		throw new ORPCError("NOT_FOUND", { message: "Incident not found." });
-	}
-}
 
 function inferKind(input: {
 	kind?: (typeof evidenceKindEnum.enumValues)[number];
@@ -390,7 +371,9 @@ export const evidenceRouter = {
 				where: eq(evidence.id, input.evidenceId),
 				with: {
 					assets: true,
-					fieldReviews: { orderBy: (review, { desc }) => [desc(review.createdAt)] },
+					fieldReviews: {
+						orderBy: (review, { desc }) => [desc(review.createdAt)],
+					},
 				},
 			});
 
@@ -398,11 +381,7 @@ export const evidenceRouter = {
 				throw new ORPCError("NOT_FOUND", { message: "Evidence not found." });
 			}
 
-			await assertIncidentVisible(
-				context.db,
-				userId,
-				existing.incidentId,
-			);
+			await assertIncidentVisible(context.db, userId, existing.incidentId);
 
 			const originalValue = readFieldValue(existing, input.field);
 			const fieldUpdate = applyFieldDecision(

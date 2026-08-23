@@ -1,9 +1,9 @@
 "use client";
 
+import { env } from "@hate_evidence_copilot/env/web";
 import { Button } from "@hate_evidence_copilot/ui/components/button";
 import { Input } from "@hate_evidence_copilot/ui/components/input";
 import { Textarea } from "@hate_evidence_copilot/ui/components/textarea";
-import { env } from "@hate_evidence_copilot/env/web";
 import { cn } from "@hate_evidence_copilot/ui/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -23,6 +23,8 @@ import {
 } from "@/components/hw";
 import Loader from "@/components/loader";
 import { client, orpc } from "@/utils/orpc";
+
+import ClassificationPanel from "../../classification-review";
 
 const PLATFORMS = [
 	"unknown",
@@ -105,9 +107,19 @@ const FIELD_DEFS: FieldDef[] = [
 		core: true,
 	},
 	{ field: "source_url", label: "Source URL", kind: "text", core: true },
-	{ field: "content_text", label: "Content text", kind: "textarea", core: true },
+	{
+		field: "content_text",
+		label: "Content text",
+		kind: "textarea",
+		core: true,
+	},
 	{ field: "occurred_at", label: "Occurred at", kind: "datetime", core: true },
-	{ field: "target_context", label: "Target context", kind: "textarea", core: true },
+	{
+		field: "target_context",
+		label: "Target context",
+		kind: "textarea",
+		core: true,
+	},
 	{
 		field: "capture_method",
 		label: "Capture method",
@@ -115,7 +127,11 @@ const FIELD_DEFS: FieldDef[] = [
 		options: CAPTURE_METHODS,
 		core: true,
 	},
-	{ field: "displayed_account_handle", label: "Displayed handle", kind: "text" },
+	{
+		field: "displayed_account_handle",
+		label: "Displayed handle",
+		kind: "text",
+	},
 	{
 		field: "displayed_account_display_name",
 		label: "Displayed name",
@@ -124,7 +140,11 @@ const FIELD_DEFS: FieldDef[] = [
 	{ field: "content_language", label: "Language", kind: "text" },
 	{ field: "occurred_at_timezone", label: "Timezone", kind: "text" },
 	{ field: "parent_context_url", label: "Parent URL", kind: "text" },
-	{ field: "parent_context_summary", label: "Parent summary", kind: "textarea" },
+	{
+		field: "parent_context_summary",
+		label: "Parent summary",
+		kind: "textarea",
+	},
 ];
 
 const CORE_FIELD_COUNT = FIELD_DEFS.filter((def) => def.core).length;
@@ -255,10 +275,7 @@ function RegisterRow({
 					) : (
 						<>
 							{latestDecision && (
-								<Stamp
-									tone={DECISION_TONE[latestDecision]}
-									className="mr-1.5"
-								>
+								<Stamp tone={DECISION_TONE[latestDecision]} className="mr-1.5">
 									{formatEnum(latestDecision)}
 								</Stamp>
 							)}
@@ -352,7 +369,9 @@ function RegisterRow({
 							>
 								Cancel
 							</Button>
-							<span className="hw-label ml-auto">enter saves · esc cancels</span>
+							<span className="hw-label ml-auto">
+								enter saves · esc cancels
+							</span>
 						</div>
 					</div>
 				</div>
@@ -582,7 +601,9 @@ export default function EvidenceVerify({
 				{/* Verification register — one ruled line per field. */}
 				<section>
 					<div className="flex items-baseline justify-between border-rule border-b pb-2">
-						<h2 className="hw-label text-foreground/80">verification register</h2>
+						<h2 className="hw-label text-foreground/80">
+							verification register
+						</h2>
 						<span className="hw-label">
 							✓ confirm · ✎ edit · ? uncertain · ∅ unavailable
 						</span>
@@ -628,6 +649,12 @@ export default function EvidenceVerify({
 						verification status. Exports read only from these verified values —
 						never from raw captures or AI drafts.
 					</p>
+
+					<ClassificationPanel
+						incidentId={incidentId}
+						evidenceId={evidenceId}
+						classifications={row.classifications}
+					/>
 				</section>
 			</div>
 		</div>

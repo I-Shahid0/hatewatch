@@ -1,3 +1,4 @@
+import type { Db } from "@hate_evidence_copilot/db";
 import {
 	computeContextIntegrity,
 	deriveContextChecks,
@@ -9,7 +10,6 @@ import {
 	type ReviewDecision,
 } from "@hate_evidence_copilot/db";
 import { eq, max } from "@hate_evidence_copilot/db/sql";
-import type { Db } from "@hate_evidence_copilot/db";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -141,9 +141,7 @@ function applyEditedValue(
 		case "occurred_at_timezone":
 			return { occurredAtTimezone: value };
 		case "capture_method":
-			return value
-				? { captureMethod: value as Evidence["captureMethod"] }
-				: {};
+			return value ? { captureMethod: value as Evidence["captureMethod"] } : {};
 		case "target_context":
 			return { targetContext: value };
 		case "parent_context_url":

@@ -1,8 +1,8 @@
 "use client";
 import { Button } from "@hate_evidence_copilot/ui/components/button";
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import type { Route } from "next";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,8 @@ import Loader from "@/components/loader";
 import { client, orpc } from "@/utils/orpc";
 
 import EvidenceInbox from "./evidence-inbox";
+import PatternCard from "./pattern-review";
+import ReviewQueue from "./review-queue";
 
 async function downloadPacket(incidentId: string, referenceCode: string) {
 	const packet = await client.incident.packet({ id: incidentId });
@@ -101,7 +103,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 						<p className="font-mono text-primary-ink text-xs tracking-[0.14em]">
 							{row.referenceCode}
 						</p>
-						<h1 className="mt-2 text-balance font-semibold text-2xl tracking-[-0.025em] sm:text-3xl">
+						<h1 className="mt-2 text-balance font-semibold text-2xl tracking-tight sm:text-3xl">
 							{row.title}
 						</h1>
 						<div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -192,7 +194,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 							Nothing captured yet. Add a screenshot, pasted text, or a URL.
 						</div>
 					) : (
-						<ol className="relative mt-4 space-y-3 before:absolute before:top-2 before:bottom-2 before:left-[15px] before:w-px before:bg-rule">
+						<ol className="relative mt-4 space-y-3 before:absolute before:top-2 before:bottom-2 before:left-3.75 before:w-px before:bg-rule">
 							{items.map((item, index) => (
 								<li
 									key={item.id}
@@ -213,7 +215,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 									<article className="min-w-0 flex-1 border border-rule bg-card">
 										<header className="flex flex-wrap items-center justify-between gap-2 border-rule border-b bg-surface-2/60 px-3 py-2">
 											<div className="flex flex-wrap items-center gap-2">
-												<span className="font-mono text-[11px] uppercase tracking-[0.1em]">
+												<span className="font-mono text-[11px] uppercase tracking-widest">
 													{formatPlatform(item.platform)}
 												</span>
 												<span className="text-muted-foreground text-xs">
@@ -343,6 +345,8 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 
 				{/* --------------------------------------------------------- sidebar */}
 				<div className="space-y-4 lg:sticky lg:top-20">
+					<ReviewQueue incidentId={incidentId} evidence={row.evidence} />
+
 					<Panel
 						title="possible patterns"
 						aside={<Stamp>{row.patterns.length}</Stamp>}
@@ -355,27 +359,12 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 							</p>
 						) : (
 							row.patterns.map((p) => (
-								<article key={p.id} className="border border-rule p-2.5">
-									<div className="flex flex-wrap items-center gap-1.5">
-										<Stamp tone="info">{formatEnum(p.kind)}</Stamp>
-										<ConfidenceStamp confidence={p.confidence} />
-										<ReviewStamp status={p.status} />
-									</div>
-									<h3 className="mt-2 font-medium text-[13px]">{p.name}</h3>
-									<p className="mt-1 text-[12px] text-muted-foreground leading-snug">
-										{p.description}
-									</p>
-									<p className="mt-2 font-mono text-[11px] text-foreground/70">
-										exhibits{" "}
-										{p.evidenceLinks
-											.map((link) =>
-												String(
-													sequenceById.get(link.evidenceId) ?? "?",
-												).padStart(2, "0"),
-											)
-											.join(" · ") || "—"}
-									</p>
-								</article>
+								<PatternCard
+									key={p.id}
+									incidentId={incidentId}
+									pattern={p}
+									sequenceById={sequenceById}
+								/>
 							))
 						)}
 					</Panel>
@@ -404,7 +393,7 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 												{String(item.sequenceNumber).padStart(2, "0")}
 											</span>
 											<div className="min-w-0 flex-1">
-												<p className="font-mono text-[11px] text-foreground/70 uppercase tracking-[0.1em]">
+												<p className="font-mono text-[11px] text-foreground/70 uppercase tracking-widest">
 													{formatPlatform(item.platform)} ·{" "}
 													{scoreLabel(item.contextIntegrityScore)}
 												</p>

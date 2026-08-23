@@ -158,7 +158,10 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 								)}
 							>
 								<span
-									className={cn("hw-label", mode === value && "text-primary-ink")}
+									className={cn(
+										"hw-label",
+										mode === value && "text-primary-ink",
+									)}
 								>
 									{label}
 								</span>
