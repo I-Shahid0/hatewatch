@@ -419,11 +419,20 @@ export const evidenceRouter = {
 						: null;
 
 			await context.db.transaction(async (tx) => {
-				const [updated] = await tx
-					.update(evidence)
-					.set(fieldUpdate)
-					.where(eq(evidence.id, existing.id))
-					.returning();
+				/**
+				 * `confirmed` yields no column changes — the value already says what the
+				 * human agrees with — so the update is skipped rather than sent empty.
+				 */
+				const hasFieldUpdates = Object.keys(fieldUpdate).length > 0;
+				const updated = hasFieldUpdates
+					? (
+							await tx
+								.update(evidence)
+								.set(fieldUpdate)
+								.where(eq(evidence.id, existing.id))
+								.returning()
+						)[0]
+					: existing;
 
 				if (!updated) {
 					throw new ORPCError("INTERNAL_SERVER_ERROR", {
