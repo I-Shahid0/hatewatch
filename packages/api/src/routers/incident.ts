@@ -1,4 +1,4 @@
-import { evidence, incident } from "@hate_evidence_copilot/db";
+import { type Db, evidence, incident } from "@hate_evidence_copilot/db";
 import {
 	and,
 	asc,
@@ -20,6 +20,115 @@ const listInput = z.object({
 });
 
 const byId = z.object({ id: z.uuid() });
+
+/** Shared by `get` and `packet`, which both need the full incident tree. */
+async function loadIncidentDetail(db: Db, userId: string, incidentId: string) {
+	const row = await db.query.incident.findFirst({
+		where: and(eq(incident.id, incidentId), visibleIncidents(userId)),
+		with: {
+			createdByUser: { columns: { id: true, name: true, email: true } },
+			evidence: {
+				orderBy: [asc(evidence.sequenceNumber)],
+				with: {
+					assets: true,
+					contextChecks: true,
+					classifications: true,
+				},
+			},
+			patterns: { with: { evidenceLinks: true } },
+			routingActions: true,
+			packets: true,
+		},
+	});
+
+	if (!row) {
+		throw new ORPCError("NOT_FOUND", { message: "Incident not found." });
+	}
+
+	return row;
+}
+
+type IncidentDetail = Awaited<ReturnType<typeof loadIncidentDetail>>;
+
+/**
+ * Shapes the incident tree into an Evidence Packet: verified evidence fields,
+ * the Context Integrity checklist, and human-reviewed classifications only.
+ * AI drafts (`summaryDraft`), pending-review classifications, and original
+ * (pre-redaction) assets are left out so the export stays defensible.
+ */
+function buildIncidentPacket(row: IncidentDetail) {
+	return {
+		generatedAt: new Date().toISOString(),
+		incident: {
+			referenceCode: row.referenceCode,
+			title: row.title,
+			status: row.status,
+			priority: row.priority,
+			safetyReviewStatus: row.safetyReviewStatus,
+			targetType: row.targetType,
+			targetDescription: row.targetDescription,
+			reportingContext: row.reportingContext,
+			declaredPlatforms: row.declaredPlatforms,
+			windowStartAt: row.windowStartAt,
+			windowEndAt: row.windowEndAt,
+			contextIntegrityScore: row.contextIntegrityScore,
+			summaryApproved: row.summaryApproved,
+			organizationName: row.organizationName,
+			closedAt: row.closedAt,
+		},
+		evidence: row.evidence
+			.filter((item) => item.verificationStatus !== "excluded")
+			.map((item) => ({
+				sequenceNumber: item.sequenceNumber,
+				platform: item.platform,
+				contentSurface: item.contentSurface,
+				sourceUrl: item.sourceUrl,
+				displayedAccountHandle: item.displayedAccountHandle,
+				displayedAccountDisplayName: item.displayedAccountDisplayName,
+				contentText: item.contentText,
+				contentLanguage: item.contentLanguage,
+				occurredAt: item.occurredAt,
+				occurredAtTimezone: item.occurredAtTimezone,
+				occurredAtPrecision: item.occurredAtPrecision,
+				capturedAt: item.capturedAt,
+				captureMethod: item.captureMethod,
+				captureNote: item.captureNote,
+				parentContextUrl: item.parentContextUrl,
+				parentContextSummary: item.parentContextSummary,
+				targetContext: item.targetContext,
+				advocateNote: item.advocateNote,
+				needsPriorityReview: item.needsPriorityReview,
+				priorityReviewReason: item.priorityReviewReason,
+				contextIntegrityScore: item.contextIntegrityScore,
+				verificationStatus: item.verificationStatus,
+				contextChecks: item.contextChecks.map((check) => ({
+					element: check.element,
+					status: check.status,
+					weight: check.weight,
+					note: check.note,
+				})),
+				classifications: item.classifications
+					.filter((c) => c.reviewStatus !== "pending_review")
+					.map((c) => ({
+						category: c.category,
+						claim: c.claim,
+						rationale: c.rationale,
+						supportingQuote: c.supportingQuote,
+						confidence: c.confidence,
+						reviewStatus: c.reviewStatus,
+					})),
+				/** Exports are built from redacted assets only — never the original. */
+				assets: item.assets
+					.filter((asset) => asset.role !== "original")
+					.map((asset) => ({
+						role: asset.role,
+						fileName: asset.fileName,
+						mimeType: asset.mimeType,
+						sha256: asset.sha256,
+					})),
+			})),
+	};
+}
 
 export const incidentRouter = {
 	/**
@@ -64,32 +173,22 @@ export const incidentRouter = {
 	 * Context Integrity checklist attached, so the score can always be expanded.
 	 */
 	get: protectedProcedure.input(byId).handler(async ({ context, input }) => {
-		const row = await context.db.query.incident.findFirst({
-			where: and(
-				eq(incident.id, input.id),
-				visibleIncidents(context.session.user.id),
-			),
-			with: {
-				createdByUser: { columns: { id: true, name: true, email: true } },
-				evidence: {
-					orderBy: [asc(evidence.sequenceNumber)],
-					with: {
-						assets: true,
-						contextChecks: true,
-						classifications: true,
-					},
-				},
-				patterns: { with: { evidenceLinks: true } },
-				routingActions: true,
-				packets: true,
-			},
-		});
+		return loadIncidentDetail(context.db, context.session.user.id, input.id);
+	}),
 
-		if (!row) {
-			throw new ORPCError("NOT_FOUND", { message: "Incident not found." });
-		}
-
-		return row;
+	/**
+	 * The Evidence Packet: verified fields only, plus the Context Integrity
+	 * checklist and any human-reviewed classifications. AI drafts and
+	 * pending-review suggestions are left out so the export stays defensible.
+	 * JSON today; the same shape backs the PDF export later.
+	 */
+	packet: protectedProcedure.input(byId).handler(async ({ context, input }) => {
+		const row = await loadIncidentDetail(
+			context.db,
+			context.session.user.id,
+			input.id,
+		);
+		return buildIncidentPacket(row);
 	}),
 
 	/**

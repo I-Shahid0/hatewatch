@@ -3,9 +3,13 @@ import { redirect } from "next/navigation";
 
 import { authClient } from "@/lib/auth-client";
 
-import Dashboard from "./dashboard";
+import IncidentDetail from "./incident-detail";
 
-export default async function DashboardPage() {
+export default async function IncidentPage({
+	params,
+}: {
+	params: Promise<{ id: string }>;
+}) {
 	const session = await authClient.getSession({
 		fetchOptions: {
 			headers: await headers(),
@@ -17,11 +21,7 @@ export default async function DashboardPage() {
 		redirect("/login");
 	}
 
-	return (
-		<div>
-			<h1>Dashboard</h1>
-			<p>Welcome {session.user.name}</p>
-			<Dashboard />
-		</div>
-	);
+	const { id } = await params;
+
+	return <IncidentDetail incidentId={id} />;
 }
