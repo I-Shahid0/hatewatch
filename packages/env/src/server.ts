@@ -8,6 +8,12 @@ export const env = createEnv({
 		BETTER_AUTH_SECRET: z.string().min(32),
 		BETTER_AUTH_URL: z.url(),
 		CORS_ORIGIN: z.url(),
+		/**
+		 * Shared parent domain for cookies when web + API are sibling hosts
+		 * (e.g. `gnci-hackathon.ishahid.pro` + `hatewatch-api.ishahid.pro`).
+		 * Leave unset for localhost (different ports = cross-site).
+		 */
+		AUTH_COOKIE_DOMAIN: z.string().min(1).optional(),
 
 		/**
 		 * Vercel AI Gateway. Optional on purpose: without it extraction is
