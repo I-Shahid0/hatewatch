@@ -21,10 +21,12 @@
 		"@orpc/server": "catalog:",
 		"@orpc/zod": "catalog:",
 		"dotenv": "catalog:",
+		"pdfkit": "^0.20.1",
 		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@hate_evidence_copilot/config": "workspace:*",
+		"@types/pdfkit": "^0.17.6",
 		"hono": "catalog:",
 		"typescript": "catalog:"
 	}

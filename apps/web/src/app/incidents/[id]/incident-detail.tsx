@@ -23,27 +23,45 @@ import {
 	VerificationStamp,
 } from "@/components/hw";
 import Loader from "@/components/loader";
-import { client, orpc } from "@/utils/orpc";
+import { client, orpc, serverUrl } from "@/utils/orpc";
 
 import EvidenceInbox from "./evidence-inbox";
 import PatternCard from "./pattern-review";
 import ReviewQueue from "./review-queue";
 
-async function downloadPacket(incidentId: string, referenceCode: string) {
-	const packet = await client.incident.packet({ id: incidentId });
-	const blob = new Blob([JSON.stringify(packet, null, 2)], {
-		type: "application/json",
-	});
+function save(blob: Blob, fileName: string) {
 	const url = URL.createObjectURL(blob);
 	const link = document.createElement("a");
 	link.href = url;
-	link.download = `${referenceCode}-evidence-packet.json`;
+	link.download = fileName;
 	link.click();
 	URL.revokeObjectURL(url);
 }
 
+async function downloadPacketJson(incidentId: string, referenceCode: string) {
+	const packet = await client.incident.packet({ id: incidentId });
+	save(
+		new Blob([JSON.stringify(packet, null, 2)], { type: "application/json" }),
+		`${referenceCode}-evidence-packet.json`,
+	);
+}
+
+/**
+ * The PDF is rendered server-side from the same packet snapshot, so this is a
+ * plain credentialed GET rather than an RPC call.
+ */
+async function downloadPacketPdf(incidentId: string, referenceCode: string) {
+	const response = await fetch(`${serverUrl}/packets/${incidentId}.pdf`, {
+		credentials: "include",
+	});
+	if (!response.ok) {
+		throw new Error(`Packet PDF request failed (${response.status})`);
+	}
+	save(await response.blob(), `${referenceCode}-evidence-packet.pdf`);
+}
+
 export default function IncidentDetail({ incidentId }: { incidentId: string }) {
-	const [downloading, setDownloading] = useState(false);
+	const [downloading, setDownloading] = useState<"pdf" | "json" | null>(null);
 
 	const incident = useQuery(
 		orpc.incident.get.queryOptions({ input: { id: incidentId } }),
@@ -122,23 +140,31 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 						<ContextRing score={row.contextIntegrityScore} />
 						<div className="flex flex-col gap-2">
 							<EvidenceInbox incidentId={incidentId} />
-							<Button
-								variant="outline"
-								className="font-mono uppercase tracking-[0.12em]"
-								disabled={downloading}
-								onClick={async () => {
-									setDownloading(true);
-									try {
-										await downloadPacket(incidentId, row.referenceCode);
-									} catch {
-										toast.error("Could not generate the evidence packet.");
-									} finally {
-										setDownloading(false);
-									}
-								}}
-							>
-								{downloading ? "Preparing…" : "Export packet (JSON)"}
-							</Button>
+							{(
+								[
+									["pdf", "Evidence packet (PDF)", downloadPacketPdf],
+									["json", "Export packet (JSON)", downloadPacketJson],
+								] as const
+							).map(([format, label, download]) => (
+								<Button
+									key={format}
+									variant={format === "pdf" ? "default" : "outline"}
+									className="font-mono uppercase tracking-[0.12em]"
+									disabled={downloading !== null}
+									onClick={async () => {
+										setDownloading(format);
+										try {
+											await download(incidentId, row.referenceCode);
+										} catch {
+											toast.error("Could not generate the evidence packet.");
+										} finally {
+											setDownloading(null);
+										}
+									}}
+								>
+									{downloading === format ? "Preparing…" : label}
+								</Button>
+							))}
 						</div>
 					</div>
 				</div>

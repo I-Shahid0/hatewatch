@@ -60,8 +60,11 @@ function getServerUrl(url: string) {
 
 	return `http://localhost:3000${normalized}`;
 }
+/** Also used for plain file downloads (the packet PDF), not just RPC. */
+export const serverUrl = getServerUrl(env.NEXT_PUBLIC_SERVER_URL);
+
 export const link = new RPCLink({
-	url: `${getServerUrl(env.NEXT_PUBLIC_SERVER_URL)}/rpc`,
+	url: `${serverUrl}/rpc`,
 	fetch(url, options) {
 		return fetch(url, {
 			...options,

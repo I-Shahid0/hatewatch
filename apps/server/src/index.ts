@@ -1,4 +1,9 @@
 import { createContext } from "@hate_evidence_copilot/api/context";
+import { renderPacketPdf } from "@hate_evidence_copilot/api/packet-pdf";
+import {
+	buildIncidentPacket,
+	loadIncidentDetail,
+} from "@hate_evidence_copilot/api/routers/incident";
 import { appRouter } from "@hate_evidence_copilot/api/routers/index";
 import { visibleIncidents } from "@hate_evidence_copilot/api/routers/visibility";
 import { resolveStoragePath } from "@hate_evidence_copilot/api/storage";
@@ -84,6 +89,37 @@ app.get("/files/*", async (c) => {
 			"Cache-Control": "private, max-age=3600",
 		},
 	});
+});
+
+/**
+ * The Evidence Packet as a PDF. Same snapshot as `incident.packet` (JSON), just
+ * rendered — a plain GET so the browser downloads a real file. Visibility is
+ * enforced by `loadIncidentDetail`, which scopes the read to the session user.
+ */
+app.get("/packets/:id", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session?.user) {
+		return c.text("Unauthorized", 401);
+	}
+
+	/** The `.pdf` suffix is cosmetic: Hono keeps it in the param, so strip it. */
+	const incidentId = c.req.param("id").replace(/\.pdf$/, "");
+
+	try {
+		const row = await loadIncidentDetail(db, session.user.id, incidentId);
+		const pdf = await renderPacketPdf(buildIncidentPacket(row));
+
+		return new Response(pdf, {
+			headers: {
+				"Content-Type": "application/pdf",
+				"Content-Disposition": `attachment; filename="${row.referenceCode}-evidence-packet.pdf"`,
+				"Cache-Control": "no-store",
+			},
+		});
+	} catch (error) {
+		console.error(error);
+		return c.text("Not found", 404);
+	}
 });
 
 export const apiHandler = new OpenAPIHandler(appRouter, {

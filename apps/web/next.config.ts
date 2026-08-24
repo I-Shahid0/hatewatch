@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
 	typedRoutes: true,
 	reactCompiler: true,
 	output: "standalone",
+	allowedDevOrigins: ["192.168.68.70"],
 };
 
 export default nextConfig;

@@ -47,8 +47,12 @@ const createInput = z.object({
 	safetyReviewNote: z.string().trim().max(2_000).optional(),
 });
 
-/** Shared by `get` and `packet`, which both need the full incident tree. */
-async function loadIncidentDetail(db: Db, userId: string, incidentId: string) {
+/** Shared by `get`, `packet`, and the PDF export, which all need the full tree. */
+export async function loadIncidentDetail(
+	db: Db,
+	userId: string,
+	incidentId: string,
+) {
 	const row = await db.query.incident.findFirst({
 		where: and(eq(incident.id, incidentId), visibleIncidents(userId)),
 		with: {
@@ -59,9 +63,11 @@ async function loadIncidentDetail(db: Db, userId: string, incidentId: string) {
 					assets: true,
 					contextChecks: true,
 					classifications: true,
+					redactions: true,
 				},
 			},
 			patterns: { with: { evidenceLinks: true } },
+			aiRuns: true,
 			routingActions: true,
 			packets: true,
 		},
@@ -82,7 +88,12 @@ type IncidentDetail = Awaited<ReturnType<typeof loadIncidentDetail>>;
  * AI drafts (`summaryDraft`), pending-review classifications, and original
  * (pre-redaction) assets are left out so the export stays defensible.
  */
-function buildIncidentPacket(row: IncidentDetail) {
+export function buildIncidentPacket(row: IncidentDetail) {
+	/** Patterns and AI runs cite evidence by exhibit number, not by id. */
+	const sequenceById = new Map(
+		row.evidence.map((item) => [item.id, item.sequenceNumber]),
+	);
+
 	return {
 		generatedAt: new Date().toISOString(),
 		incident: {
@@ -143,6 +154,14 @@ function buildIncidentPacket(row: IncidentDetail) {
 						confidence: c.confidence,
 						reviewStatus: c.reviewStatus,
 					})),
+				/** Both applied and dismissed redactions: each is a disclosed decision. */
+				redactions: item.redactions.map((entry) => ({
+					kind: entry.kind,
+					status: entry.status,
+					reason: entry.reason,
+					detectedBy: entry.detectedBy,
+					decidedAt: entry.decidedAt,
+				})),
 				/** Exports are built from redacted assets only — never the original. */
 				assets: item.assets
 					.filter((asset) => asset.role !== "original")
@@ -153,8 +172,41 @@ function buildIncidentPacket(row: IncidentDetail) {
 						sha256: asset.sha256,
 					})),
 			})),
+		/** Same rule as classifications: nothing a human has not looked at yet. */
+		patterns: row.patterns
+			.filter(
+				(item) => item.status !== "suggested" && item.status !== "under_review",
+			)
+			.map((item) => ({
+				kind: item.kind,
+				name: item.name,
+				description: item.description,
+				status: item.status,
+				confidence: item.confidence,
+				reviewerNote: item.reviewerNote,
+				firstObservedAt: item.firstObservedAt,
+				lastObservedAt: item.lastObservedAt,
+				evidenceSequenceNumbers: item.evidenceLinks
+					.map((link) => sequenceById.get(link.evidenceId))
+					.filter((sequence) => sequence !== undefined)
+					.sort((a, b) => a - b),
+			})),
+		/** AI transparency: every model invocation on this incident, disclosed. */
+		aiRuns: row.aiRuns.map((run) => ({
+			task: run.task,
+			provider: run.provider,
+			model: run.model,
+			promptVersion: run.promptVersion,
+			status: run.status,
+			completedAt: run.completedAt,
+			evidenceSequenceNumber: run.evidenceId
+				? (sequenceById.get(run.evidenceId) ?? null)
+				: null,
+		})),
 	};
 }
+
+export type IncidentPacket = ReturnType<typeof buildIncidentPacket>;
 
 export const incidentRouter = {
 	/**
