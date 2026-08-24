@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
+	aiRun,
 	auditEvent,
 	captureMethodEnum,
 	computeContextIntegrity,
@@ -8,6 +11,7 @@ import {
 	evidence,
 	evidenceAsset,
 	evidenceContextCheck,
+	evidenceExtraction,
 	evidenceFieldEnum,
 	evidenceFieldReview,
 	evidenceKindEnum,
@@ -15,10 +19,9 @@ import {
 	type ReviewDecision,
 	reviewDecisionEnum,
 } from "@hate_evidence_copilot/db";
-import { asc, eq, sql } from "@hate_evidence_copilot/db/sql";
+import { asc, eq, max, sql } from "@hate_evidence_copilot/db/sql";
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
-
 import {
 	allocateSequenceNumber,
 	applyFieldDecision,
@@ -27,8 +30,19 @@ import {
 	recomputeEvidenceIntegrity,
 	refreshIncidentIntegrity,
 } from "../evidence-review";
+import {
+	EXTRACTION_PROMPT_VERSION,
+	extractEvidenceFields,
+	extractionModel,
+	isExtractionConfigured,
+	isReadableArtifact,
+} from "../extraction";
 import { protectedProcedure } from "../index";
-import { removeStoredFile, storeEvidenceFile } from "../storage";
+import {
+	removeStoredFile,
+	resolveStoragePath,
+	storeEvidenceFile,
+} from "../storage";
 import { assertIncidentVisible } from "./visibility";
 
 const listInput = z.object({
@@ -99,6 +113,16 @@ const reviewFieldInput = z
 			});
 		}
 	});
+
+/**
+ * Statuses extraction is allowed to move. Anything further along means a human
+ * has already reviewed a field, and their status must survive a re-run.
+ */
+const EXTRACTION_STATUSES = new Set([
+	"uploaded",
+	"extraction_failed",
+	"needs_verification",
+]);
 
 function inferKind(input: {
 	kind?: (typeof evidenceKindEnum.enumValues)[number];
@@ -355,6 +379,244 @@ export const evidenceRouter = {
 				if (writtenKey) await removeStoredFile(writtenKey);
 				throw error;
 			}
+		}),
+
+	/**
+	 * Ask the model to read one item and propose values for it.
+	 *
+	 * The proposal is written to `evidence_extraction` and nowhere else — no
+	 * verified column on `evidence` is touched, so a re-run can never overwrite a
+	 * human decision, and a model outage costs the advocate nothing but the
+	 * suggestion column. `reviewField` stays the only path to a verified value.
+	 */
+	extract: protectedProcedure
+		.input(z.object({ evidenceId: z.uuid() }))
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+
+			const row = await context.db.query.evidence.findFirst({
+				where: eq(evidence.id, input.evidenceId),
+				with: { assets: true },
+			});
+
+			if (!row) {
+				throw new ORPCError("NOT_FOUND", { message: "Evidence not found." });
+			}
+
+			await assertIncidentVisible(context.db, userId, row.incidentId);
+
+			if (!isExtractionConfigured()) {
+				throw new ORPCError("SERVICE_UNAVAILABLE", {
+					message:
+						"AI extraction is not configured. Verify the fields manually.",
+				});
+			}
+
+			const original = row.assets.find((asset) => asset.role === "original");
+			const artifact =
+				original && isReadableArtifact(original.mimeType) ? original : null;
+			const contentText = row.contentText?.trim() || null;
+
+			if (!artifact && !contentText) {
+				throw new ORPCError("BAD_REQUEST", {
+					message:
+						"Nothing to extract from: attach a readable artifact or paste the content text.",
+				});
+			}
+
+			/**
+			 * Only items no human has touched follow the extracting → verify status
+			 * arc. Once a field is reviewed, a re-run leaves the status exactly where
+			 * the reviewer left it.
+			 */
+			const tracksStatus = EXTRACTION_STATUSES.has(row.verificationStatus);
+			const { provider, model } = extractionModel();
+			const startedAt = new Date();
+
+			const [run] = await context.db
+				.insert(aiRun)
+				.values({
+					incidentId: row.incidentId,
+					evidenceId: row.id,
+					task: "evidence_extraction",
+					status: "running",
+					provider,
+					model,
+					promptVersion: EXTRACTION_PROMPT_VERSION,
+					/** A digest, so the log does not become a second copy of the evidence. */
+					inputDigest: createHash("sha256")
+						.update(
+							`${EXTRACTION_PROMPT_VERSION}:${original?.sha256 ?? ""}:${contentText ?? ""}`,
+						)
+						.digest("hex"),
+					triggeredBy: userId,
+					startedAt,
+				})
+				.returning({ id: aiRun.id });
+
+			if (!run) {
+				throw new ORPCError("INTERNAL_SERVER_ERROR", {
+					message: "AI run insert returned no row.",
+				});
+			}
+
+			if (tracksStatus) {
+				await context.db
+					.update(evidence)
+					.set({ verificationStatus: "extracting" })
+					.where(eq(evidence.id, row.id));
+			}
+
+			try {
+				const result = await extractEvidenceFields({
+					artifact: artifact
+						? {
+								data: await readFile(resolveStoragePath(artifact.storageKey)),
+								mediaType: artifact.mimeType ?? "application/octet-stream",
+							}
+						: null,
+					contentText,
+					sourceUrl: row.sourceUrl,
+					captureNote: row.captureNote,
+				});
+
+				await context.db.transaction(async (tx) => {
+					/** Serialises concurrent runs against the version unique index. */
+					await tx
+						.select({ id: evidence.id })
+						.from(evidence)
+						.where(eq(evidence.id, row.id))
+						.for("update");
+
+					const [agg] = await tx
+						.select({ highest: max(evidenceExtraction.version) })
+						.from(evidenceExtraction)
+						.where(eq(evidenceExtraction.evidenceId, row.id));
+
+					await tx
+						.update(evidenceExtraction)
+						.set({ isCurrent: false })
+						.where(eq(evidenceExtraction.evidenceId, row.id));
+
+					const [extraction] = await tx
+						.insert(evidenceExtraction)
+						.values({
+							evidenceId: row.id,
+							aiRunId: run.id,
+							version: (agg?.highest ?? 0) + 1,
+							isCurrent: true,
+							extracted: result.extracted,
+							fieldConfidence: result.fieldConfidence,
+							limitationsNote: result.limitationsNote,
+						})
+						.returning();
+
+					if (!extraction) {
+						throw new ORPCError("INTERNAL_SERVER_ERROR", {
+							message: "Extraction insert returned no row.",
+						});
+					}
+
+					await tx
+						.update(aiRun)
+						.set({
+							status: "succeeded",
+							output: {
+								extracted: result.extracted,
+								fieldConfidence: result.fieldConfidence,
+								limitations: result.limitationsNote,
+							},
+							inputTokens: result.inputTokens,
+							outputTokens: result.outputTokens,
+							latencyMs: Date.now() - startedAt.getTime(),
+							completedAt: new Date(),
+						})
+						.where(eq(aiRun.id, run.id));
+
+					if (tracksStatus) {
+						await tx
+							.update(evidence)
+							.set({ verificationStatus: "needs_verification" })
+							.where(eq(evidence.id, row.id));
+					}
+
+					await tx.insert(auditEvent).values({
+						incidentId: row.incidentId,
+						actorKind: "ai",
+						actorUserId: userId,
+						aiRunId: run.id,
+						action: "evidence.extracted",
+						entityType: "evidence_extraction",
+						entityId: extraction.id,
+						valueAfter: {
+							version: extraction.version,
+							model: `${provider}/${model}`,
+							promptVersion: EXTRACTION_PROMPT_VERSION,
+							fieldConfidence: result.fieldConfidence,
+							limitations: result.limitationsNote,
+						},
+						note: "Proposed values only - no verified field was changed.",
+					});
+				});
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "Extraction failed.";
+
+				/**
+				 * Recorded, not swallowed: the item lands on `extraction_failed`
+				 * rather than stranding on `extracting`, and every field stays
+				 * manually reviewable.
+				 */
+				await context.db
+					.update(aiRun)
+					.set({
+						status: "failed",
+						errorMessage: message.slice(0, 2_000),
+						latencyMs: Date.now() - startedAt.getTime(),
+						completedAt: new Date(),
+					})
+					.where(eq(aiRun.id, run.id));
+
+				if (tracksStatus) {
+					await context.db
+						.update(evidence)
+						.set({ verificationStatus: "extraction_failed" })
+						.where(eq(evidence.id, row.id));
+				}
+
+				await context.db.insert(auditEvent).values({
+					incidentId: row.incidentId,
+					actorKind: "ai",
+					actorUserId: userId,
+					aiRunId: run.id,
+					action: "evidence.extraction_failed",
+					entityType: "evidence",
+					entityId: row.id,
+					valueAfter: {
+						model: `${provider}/${model}`,
+						error: message.slice(0, 2_000),
+					},
+				});
+
+				throw new ORPCError("SERVICE_UNAVAILABLE", {
+					message: `Extraction failed: ${message} The fields can still be verified manually.`,
+				});
+			}
+
+			return context.db.query.evidence.findFirst({
+				where: eq(evidence.id, row.id),
+				with: {
+					incident: { columns: { id: true, referenceCode: true, title: true } },
+					assets: true,
+					contextChecks: true,
+					classifications: true,
+					fieldReviews: true,
+					extractions: {
+						where: (extraction, { eq: equals }) =>
+							equals(extraction.isCurrent, true),
+					},
+				},
+			});
 		}),
 
 	/**

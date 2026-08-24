@@ -192,6 +192,16 @@ function readRowValue(
 	}
 }
 
+type ConfidenceLevel = "high" | "medium" | "low" | "unavailable";
+
+/** Per-field confidence, never a single overall score. */
+const CONFIDENCE_CLASS: Record<ConfidenceLevel, string> = {
+	high: "text-signal-ok",
+	medium: "text-signal-warn",
+	low: "text-signal-warn",
+	unavailable: "text-signal-gap",
+};
+
 const DECISION_TONE: Record<
 	ReviewDecision,
 	"ok" | "lime" | "warn" | "gap" | "neutral"
@@ -209,6 +219,7 @@ function RegisterRow({
 	def,
 	current,
 	suggestion,
+	confidence,
 	latestDecision,
 	editing,
 	editValue,
@@ -221,6 +232,7 @@ function RegisterRow({
 	def: FieldDef;
 	current: string;
 	suggestion: string | null;
+	confidence: ConfidenceLevel | null;
 	latestDecision: ReviewDecision | null;
 	editing: boolean;
 	editValue: string;
@@ -264,7 +276,17 @@ function RegisterRow({
 					</p>
 					{suggestion && suggestion !== current && (
 						<p className="mt-1 border-rule border-l border-dashed pl-2 font-mono text-[11px] text-muted-foreground leading-snug">
-							ai draft · {suggestion}
+							ai draft
+							{confidence && (
+								<>
+									{" · "}
+									<span className={CONFIDENCE_CLASS[confidence]}>
+										{confidence}
+									</span>
+								</>
+							)}
+							{" · "}
+							{suggestion}
 						</p>
 					)}
 				</div>
@@ -438,6 +460,31 @@ export default function EvidenceVerify({
 		},
 	});
 
+	/**
+	 * Extraction only ever writes a proposal. If it fails the item lands on
+	 * `extraction_failed` and every field stays manually reviewable, so the
+	 * queries are refreshed on both paths.
+	 */
+	const extract = useMutation({
+		mutationFn: () => client.evidence.extract({ evidenceId }),
+		onSettled: async () => {
+			await Promise.all([
+				queryClient.invalidateQueries({
+					queryKey: orpc.evidence.get.key({ input: { id: evidenceId } }),
+				}),
+				queryClient.invalidateQueries({
+					queryKey: orpc.evidence.list.key({
+						input: { incidentId, order: "timeline" },
+					}),
+				}),
+			]);
+		},
+		onSuccess: () =>
+			toast.success("AI draft ready — confirm each field to verify it."),
+		onError: (error) =>
+			toast.error(error.message || "Extraction failed. Verify manually."),
+	});
+
 	const latestByField = useMemo(() => {
 		const map = new Map<EvidenceFieldName, ReviewDecision>();
 		for (const entry of evidence.data?.fieldReviews ?? []) {
@@ -448,8 +495,12 @@ export default function EvidenceVerify({
 		return map;
 	}, [evidence.data?.fieldReviews]);
 
-	const extraction = evidence.data?.extractions?.[0]?.extracted as
+	const draft = evidence.data?.extractions?.[0];
+	const extraction = draft?.extracted as
 		| Partial<Record<EvidenceFieldName, string | null>>
+		| undefined;
+	const confidence = draft?.fieldConfidence as
+		| Partial<Record<EvidenceFieldName, ConfidenceLevel>>
 		| undefined;
 
 	if (evidence.isPending) {
@@ -504,11 +555,34 @@ export default function EvidenceVerify({
 							core {coreReviewed}/{CORE_FIELD_COUNT} reviewed
 						</span>
 					</div>
-					<ContextMeter
-						score={row.contextIntegrityScore}
-						checks={row.contextChecks}
-					/>
+					<div className="flex items-center gap-3">
+						<Button
+							size="xs"
+							variant="outline"
+							disabled={extract.isPending}
+							onClick={() => extract.mutate()}
+						>
+							{extract.isPending
+								? "extracting…"
+								: extraction
+									? "re-extract"
+									: "extract with AI"}
+						</Button>
+						<ContextMeter
+							score={row.contextIntegrityScore}
+							checks={row.contextChecks}
+						/>
+					</div>
 				</div>
+
+				{draft?.limitationsNote && (
+					<p className="mt-2.5 border-signal-warn/50 border-l-2 pl-2 text-[11px] text-muted-foreground leading-snug">
+						<span className="hw-label text-signal-warn">
+							model could not read
+						</span>{" "}
+						{draft.limitationsNote}
+					</p>
+				)}
 			</header>
 
 			<div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1.2fr] lg:items-start">
@@ -621,6 +695,7 @@ export default function EvidenceVerify({
 									def={def}
 									current={current}
 									suggestion={extraction?.[def.field] ?? null}
+									confidence={confidence?.[def.field] ?? null}
 									latestDecision={latestByField.get(def.field) ?? null}
 									editing={editingField === def.field}
 									editValue={editValues[def.field] ?? current}

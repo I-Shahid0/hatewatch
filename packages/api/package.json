@@ -20,6 +20,7 @@
 		"@orpc/openapi": "catalog:",
 		"@orpc/server": "catalog:",
 		"@orpc/zod": "catalog:",
+		"ai": "^7.0.77",
 		"dotenv": "catalog:",
 		"pdfkit": "^0.20.1",
 		"zod": "catalog:"
