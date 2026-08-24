@@ -44,6 +44,7 @@
 		"docker:up": "docker compose up -d --build",
 		"docker:down": "docker compose down",
 		"docker:logs": "docker compose logs -f",
+		"deploy:server": "fly deploy",
 		"check": "biome check --write ."
 	},
 	"dependencies": {

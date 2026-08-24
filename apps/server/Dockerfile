@@ -11,7 +11,11 @@ RUN cd apps/server && bun run build
 FROM oven/bun:1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=3000
 COPY --from=builder /app /app
+
+# Evidence uploads land here; on Fly this path is a mounted volume.
+RUN mkdir -p /app/apps/server/storage
 
 EXPOSE 3000
 

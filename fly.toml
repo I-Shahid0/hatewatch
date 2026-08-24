@@ -1,0 +1,47 @@
+# HateWatch API — Fly.io
+# Deploy from the monorepo root: `fly deploy`
+#
+# Rename `app` if `hatewatch-api` is taken: `fly apps create <name>` then update below.
+
+app = "hatewatch-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/server/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  # BETTER_AUTH_URL / CORS_ORIGIN / DATABASE_URL / secrets → `fly secrets set`
+  # Do not put secrets in this file.
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # Keep one machine warm so evidence uploads + volume stay available for demos.
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/"
+
+# Local-disk evidence storage (see packages/api/src/storage.ts).
+# Create once: `fly volumes create server_storage --region iad --size 3`
+[[mounts]]
+  source = "server_storage"
+  destination = "/app/apps/server/storage"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
