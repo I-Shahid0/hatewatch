@@ -28,6 +28,7 @@ import { client, orpc, serverUrl } from "@/utils/orpc";
 import EvidenceInbox from "./evidence-inbox";
 import PatternCard from "./pattern-review";
 import ReviewQueue from "./review-queue";
+import RoutingPanel from "./routing-panel";
 
 function save(blob: Blob, fileName: string) {
 	const url = URL.createObjectURL(blob);
@@ -372,6 +373,12 @@ export default function IncidentDetail({ incidentId }: { incidentId: string }) {
 				{/* --------------------------------------------------------- sidebar */}
 				<div className="space-y-4 lg:sticky lg:top-20">
 					<ReviewQueue incidentId={incidentId} evidence={row.evidence} />
+
+					<RoutingPanel
+						incidentId={incidentId}
+						actions={row.routingActions}
+						evidence={row.evidence}
+					/>
 
 					<Panel
 						title="possible patterns"
