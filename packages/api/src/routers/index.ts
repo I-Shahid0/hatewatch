@@ -5,6 +5,7 @@ import { classificationRouter } from "./classification";
 import { evidenceRouter } from "./evidence";
 import { incidentRouter } from "./incident";
 import { patternRouter } from "./pattern";
+import { routingRouter } from "./routing";
 
 export const appRouter = {
 	healthCheck: publicProcedure.handler(() => {
@@ -20,6 +21,7 @@ export const appRouter = {
 	evidence: evidenceRouter,
 	classification: classificationRouter,
 	pattern: patternRouter,
+	routing: routingRouter,
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

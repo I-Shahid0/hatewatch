@@ -12,7 +12,7 @@ import { FIELD, Field, TEXTAREA } from "@/components/field";
 import { formatEnum, formatPlatform } from "@/components/hw";
 import { client, orpc } from "@/utils/orpc";
 
-const PLATFORMS = [
+export const PLATFORMS = [
 	"unknown",
 	"x",
 	"instagram",
@@ -74,7 +74,7 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 				advocateNote: advocateNote.trim() || undefined,
 				file: file ?? undefined,
 			}),
-		onSuccess: async () => {
+		onSuccess: async (created) => {
 			toast.success("Evidence added to the timeline");
 			setFile(null);
 			setContentText("");
@@ -96,6 +96,29 @@ export default function EvidenceInbox({ incidentId }: { incidentId: string }) {
 				}),
 				queryClient.invalidateQueries({ queryKey: orpc.incident.list.key() }),
 			]);
+
+			/**
+			 * One less click: ask the model to read the item we just captured.
+			 * Deliberately fire-and-forget — extraction only ever writes a
+			 * suggestion, so a missing API key or a model outage must not fail the
+			 * upload. A real extraction failure is recorded on the row itself as
+			 * `extraction_failed`, and manual verification is unaffected either way.
+			 */
+			client.evidence
+				.extract({ evidenceId: created.id })
+				.then(() =>
+					Promise.all([
+						queryClient.invalidateQueries({
+							queryKey: orpc.incident.get.key({ input: { id: incidentId } }),
+						}),
+						queryClient.invalidateQueries({
+							queryKey: orpc.evidence.list.key({
+								input: { incidentId, order: "timeline" },
+							}),
+						}),
+					]),
+				)
+				.catch(() => {});
 		},
 		onError: (error) => {
 			toast.error(error.message || "Could not add evidence.");

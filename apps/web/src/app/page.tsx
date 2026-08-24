@@ -67,6 +67,10 @@ export default function Home() {
 						online hate.
 					</h1>
 
+					<p className="mt-4 font-mono text-[12px] text-primary-ink uppercase tracking-[0.2em]">
+						Capture. Verify. Understand. Act.
+					</p>
+
 					<p className="mt-5 max-w-xl text-pretty text-muted-foreground leading-relaxed">
 						A classifier asks whether one post looks hateful. HateWatch asks
 						whether the evidence needed to understand an{" "}
